@@ -1,0 +1,21 @@
+# Rust build artifacts
+/target/
+
+# Cargo-specific
+.cargo/
+/Cargo.lock
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.iml
+
+# Backup/temporary files
+*.swp
+*.swo
+*~
+*.bak
+
+# OS-specific
+.DS_Store
+Thumbs.db
