@@ -1,81 +1,99 @@
+#include <boost/asio.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <iostream>
-#include <vector>
-#include <chrono>
 #include <random>
-#include <semaphore>
-#include <thread>
-#include <coroutine>
+#include <chrono>
+#include <queue>
 
-using namespace std::chrono;
+using boost::asio::awaitable;
+using boost::asio::co_spawn;
+using boost::asio::detached;
+using boost::asio::io_context;
+using boost::asio::steady_timer;
+using namespace std::chrono_literals;
 
-// Awaitable sleep
-struct AsyncSleep {
-    milliseconds duration;
-    bool await_ready() const noexcept { return duration.count() <= 0; }
-    void await_suspend(std::coroutine_handle<> h) const {
-        std::thread([h, d = duration](){
-            std::this_thread::sleep_for(d);
-            h.resume();
-        }).detach();
-    }
-    void await_resume() const noexcept {}
-};
 
-// Minimal async task
-struct Task {
-    struct promise_type {
-        Task get_return_object() { return Task{std::coroutine_handle<promise_type>::from_promise(*this)}; }
-        std::suspend_never initial_suspend() { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-        void return_void() {}
-        void unhandled_exception() { std::terminate(); }
-    };
-    std::coroutine_handle<promise_type> coro;
-    Task(std::coroutine_handle<promise_type> h) : coro(h) {}
-    ~Task() { if(coro) coro.destroy(); }
-};
+std::mt19937 randomGenerator(std::random_device{}());
+std::uniform_real_distribution<> distribution(0, 1);
 
-// Semaphore for concurrency
-std::counting_semaphore<> semaphore(5);
+awaitable<bool> simulateApiCall(int id) {
+    int delayMs = 1000;
 
-Task asyncApiCall(int id) {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<> dist(0,1);
+    steady_timer timer(co_await boost::asio::this_coro::executor);
+    timer.expires_after(std::chrono::milliseconds(delayMs));
+    co_await timer.async_wait(boost::asio::use_awaitable);
 
-    co_await AsyncSleep{milliseconds(100)};
-
-    bool success = dist(rng) < 0.8;
-    std::cout << "RUN - Task[" << id << "] finished. Success: " << success << "\n";
+    std::cout << "RUN - Task[" << id << "] finished after " << delayMs << "ms.\n";
+    co_return distribution(randomGenerator) < 0.8;
 }
 
-Task callApiAsync(int id) {
+awaitable<void> callApi(int id) {
     int tries = 0;
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<> dist(0,1);
-
-    while(true) {
+    while (true) {
         ++tries;
-        semaphore.acquire();
-        co_await asyncApiCall(id);
-        semaphore.release();
-
-        if (dist(rng) < 0.8) {
+        if (co_await simulateApiCall(id)) {
             std::cout << "SUCCESS - Task[" << id << "] after " << tries << " tries.\n";
             co_return;
         } else {
-            std::cout << "FAIL - Task[" << id << "] retrying...\n";
+            std::cout << "FAIL - Task[" << id << "] failed.\n";
         }
     }
 }
 
-int main() {
-    int taskCount = 20;
-    std::vector<Task> tasks;
+int runWithQueueDispatcher(int totalTasks, int maxConnections) {
+    io_context ctx;
 
-    for(int i = 0; i < taskCount; ++i) {
-        tasks.push_back(callApiAsync(i));
+    auto start = std::chrono::high_resolution_clock::now();
+
+    std::queue<int> tasks;
+    for(int i = 0; i < totalTasks; i++) {
+        tasks.push(i);
     }
 
-    // Let tasks finish
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    int running = 0;
+    boost::asio::steady_timer allDone(ctx);
+
+    std::function<awaitable<void>(int)> launch = [&](int id) -> awaitable<void> {
+        ++running;
+        co_await callApi(id);
+        --running;
+
+        if(!tasks.empty()) {
+            int next = tasks.front();
+            tasks.pop();
+            co_spawn(ctx, launch(next), detached);
+        }
+
+        if(running == 0 && tasks.empty()) {
+            allDone.cancel();
+        }
+
+        co_return;
+    };
+
+    for(int i = 0; i < maxConnections; i++) {
+        int id = tasks.front();
+        tasks.pop();
+        co_spawn(ctx, launch(id), detached);
+    }
+
+    allDone.expires_at(std::chrono::steady_clock::time_point::max());
+    allDone.async_wait(boost::asio::use_awaitable);
+    ctx.run();
+
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count();
+}
+
+int main() {
+    int taskCount = 100;
+    int maxConnections = 5;
+
+    std::cout << "START - Queue dispatcher started..." << std::endl;
+    int timeQueueDispatcher = runWithQueueDispatcher(taskCount, maxConnections);
+
+    std::cout << "END - Total time - Queue dispatcher: " << timeQueueDispatcher << " ms.\n";
 }
