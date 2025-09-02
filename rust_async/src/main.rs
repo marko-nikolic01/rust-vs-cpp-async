@@ -5,7 +5,7 @@ use tokio::{sync::Semaphore, time::{sleep, Duration}};
 use futures::stream::{self, StreamExt};
 
 async fn simulate_api_call(id: usize) -> bool { 
-    let delay_ms: u64 = 10000;
+    let delay_ms: u64 = 1000;
     sleep(Duration::from_millis(delay_ms)).await;
 
     println!("RUN - Task[{}] run ended after {}ms.", id, delay_ms);
@@ -71,7 +71,7 @@ async fn main() {
     println!("START - Buffered Unordered started...");
     let time_buffer_unordered = run_with_buffer_unordered(task_count, max_connections).await;
 
-    println!("START - Semaphore Unordered started...");
+    println!("START - Semaphore started...");
     let time_semaphore = run_with_semaphore(task_count, max_connections).await;
 
     println!("END - Total time - Buffered Unordered: {:?}", time_buffer_unordered);

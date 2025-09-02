@@ -92,8 +92,8 @@ int main() {
     int taskCount = 100;
     int maxConnections = 5;
 
-    std::cout << "START - Queue dispatcher started..." << std::endl;
+    std::cout << "START - Queue Dispatcher started..." << std::endl;
     int timeQueueDispatcher = runWithQueueDispatcher(taskCount, maxConnections);
 
-    std::cout << "END - Total time - Queue dispatcher: " << timeQueueDispatcher << " ms.\n";
+    std::cout << "END - Total time - Queue Dispatcher: " << timeQueueDispatcher << " ms.\n";
 }

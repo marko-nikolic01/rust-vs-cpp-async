@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1756739739 source:/home/marko/Documents/GitHub/rust-vs-cpp-async/cpp_async/main.cpp
+1756752336 source:/home/marko/Documents/GitHub/rust-vs-cpp-async/cpp_async/main.cpp
 	<boost/asio.hpp>
 	<boost/asio/steady_timer.hpp>
 	<boost/asio/awaitable.hpp>
@@ -9,4 +9,5 @@
 	<iostream>
 	<random>
 	<chrono>
+	<queue>
 
